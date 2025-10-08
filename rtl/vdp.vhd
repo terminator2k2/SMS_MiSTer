@@ -8,36 +8,40 @@ entity vdp is
 		MAX_SPPL : integer := 7
 	);
 	port (
-		clk_sys:			in  STD_LOGIC;
-		ce_vdp:			in  STD_LOGIC;
-		ce_pix:			in  STD_LOGIC;
-		ce_sp:			in  STD_LOGIC;
-		gg:				in  STD_LOGIC;
-		ggres:			        in STD_LOGIC;
-		se_bank:			in  STD_LOGIC;
-		sp64:				in  STD_LOGIC;
-		HL:				in  STD_LOGIC;
-		RD_n:				in  STD_LOGIC;
-		WR_n:				in  STD_LOGIC;
-		IRQ_n:			out STD_LOGIC;
-		WR_direct:		in  STD_LOGIC;
-		A_direct:		in  STD_LOGIC_VECTOR (13 downto 8);
-		A:					in  STD_LOGIC_VECTOR (7 downto 0);
-		D_in:				in  STD_LOGIC_VECTOR (7 downto 0);
-		D_out:			out STD_LOGIC_VECTOR (7 downto 0);
-		x:					in  STD_LOGIC_VECTOR (8 downto 0);
-		y:					in  STD_LOGIC_VECTOR (8 downto 0);
-		color:			out STD_LOGIC_VECTOR (11 downto 0);
-		palettemode:	in STD_LOGIC;
-		y1:            out std_logic;
-		mask_column:   out STD_LOGIC;
-		black_column:		in STD_LOGIC;
-		smode_M1: 		out STD_LOGIC;
-		smode_M2: 		out STD_LOGIC;
-		smode_M3: 		out STD_LOGIC;
-		smode_M4: 		out STD_LOGIC;
-		ysj_quirk:		in  STD_LOGIC;
-		reset_n:       in  STD_LOGIC);
+    clk_sys:        in  STD_LOGIC;
+    ce_vdp:         in  STD_LOGIC;
+    ce_pix:         in  STD_LOGIC;
+    ce_sp:          in  STD_LOGIC;
+    gg:             in  STD_LOGIC;
+    ggres:          in  STD_LOGIC;
+    se_bank:        in  STD_LOGIC;
+    sp64:           in  STD_LOGIC;
+    HL:             in  STD_LOGIC;
+    RD_n:           in  STD_LOGIC;
+    WR_n:           in  STD_LOGIC;
+    IRQ_n:          out STD_LOGIC;
+    WR_direct:      in  STD_LOGIC;
+    A_direct:       in  STD_LOGIC_VECTOR (13 downto 8);
+    A:              in  STD_LOGIC_VECTOR (7 downto 0);
+    D_in:           in  STD_LOGIC_VECTOR (7 downto 0);
+    D_out:          out STD_LOGIC_VECTOR (7 downto 0);
+    x:              in  STD_LOGIC_VECTOR (8 downto 0);
+    y:              in  STD_LOGIC_VECTOR (8 downto 0);
+    color:          out STD_LOGIC_VECTOR (11 downto 0);
+    palettemode:    in  STD_LOGIC;
+    y1:             out STD_LOGIC;
+    mask_column:    out STD_LOGIC;
+    black_column:   in  STD_LOGIC;
+    smode_M1:       out STD_LOGIC;
+    smode_M2:       out STD_LOGIC;
+    smode_M3:       out STD_LOGIC;
+    smode_M4:       out STD_LOGIC;
+    ysj_quirk:      in  STD_LOGIC;
+    reset_n:        in  STD_LOGIC;
+    border_en_gun:  in  STD_LOGIC;
+	border_h:		in  std_logic_vector(3 downto 0);
+	border_v:		in  std_logic_vector(3 downto 0)
+);
 end vdp;
 
 architecture Behavioral of vdp is
@@ -150,6 +154,9 @@ begin
 		ysj_quirk			=> ysj_quirk,
 						
 		display_on		=> display_on,
+		border_en_gun   => border_en_gun,
+		border_h      => border_h(3 downto 0),
+	    border_v      => border_v(3 downto 0),
 		mask_column0	=> mask_column0,
 		black_column	=> black_column,
 		overscan			=> overscan,

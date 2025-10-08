@@ -1,3 +1,4 @@
+
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL; 
@@ -80,6 +81,9 @@ entity system is
 		palettemode:	in	STD_LOGIC;
 		mask_column:out STD_LOGIC;
 		black_column:		in STD_LOGIC;
+		border_en_gun : in  STD_LOGIC;
+		border_h:		in  std_logic_vector(3 downto 0);
+		border_v:		in  std_logic_vector(3 downto 0);
 		smode_M1:		out STD_LOGIC;
 		smode_M2:		out STD_LOGIC;
 		smode_M3:		out STD_LOGIC;
@@ -224,6 +228,7 @@ architecture Behavioral of system is
 	signal mapper_msx_lock0 :  boolean := false ;
 	signal mapper_msx_lock :   boolean := false ;
 	signal mapper_msx :		   std_logic := '0' ;
+	
 
 	signal mc8123_D_out    : std_logic_vector(7 downto 0);
 	signal segadect2_D_out : std_logic_vector(7 downto 0);
@@ -349,6 +354,9 @@ begin
 		color		=> vdp_color,
 		palettemode	=> palettemode,
 --		y1       => vdp_y1,
+        border_en_gun => border_en_gun, 
+		border_h      => border_h(3 downto 0),
+	    border_v      => border_v(3 downto 0),
 		smode_M1  => smode_M1,
 		smode_M2  => smode_M2,
 		smode_M3  => smode_M3,
@@ -386,6 +394,9 @@ begin
 		y			=> y,
 		color		=> vdp2_color,
 		palettemode	=> palettemode,
+		border_en_gun => border_en_gun,
+		border_h      => border_h(3 downto 0),
+	    border_v      => border_v(3 downto 0),
 		y1       => vdp2_y1,
 --		smode_M1  => smode2_M1,
 --		smode_M2  => smode2_M2,
@@ -851,3 +862,4 @@ port map(
 	end process;
 
 end Behavioral;
+

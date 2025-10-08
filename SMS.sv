@@ -252,7 +252,7 @@ video_freak video_freak
 // 0         1         2         3          4         5         6
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXX       XXXXX
+// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX  XXXXXXXXX
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -294,6 +294,9 @@ parameter CONF_STR = {
 	"D2P1OD,Border,No,Yes;",
 	"P1OST,Masked Left Column,BG,Black,Cut;",
 	"P1O8,Sprites Per Line,Standard,All;",
+	"P1o[43],Sinden Border,Off,On;",
+	"P1o[47:44],Sinden Border Width,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20;",
+	"P1o[58:55],Sinden Border Height,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20;",
 	"d2P1o7,Game Gear Res.,Standard,Extended;",
 	"P1-;",
 	"P1OC,SMS FM Sound,Enable,Disable;",
@@ -739,6 +742,9 @@ system #(63) system
 	.palettemode(palettemode),
 	.mask_column(mask_column),
 	.black_column(status[28] && ~status[13]),
+	.border_en_gun(status[43]),
+	.border_h(status[47:44]),
+	.border_v(status[58:55]),
 	.smode_M1(smode_M1),
 	.smode_M2(smode_M2),
 	.smode_M3(smode_M3),
