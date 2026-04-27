@@ -28,12 +28,17 @@ entity vdp_main is
 		display_on:			in  std_logic;
 		mask_column0:		in  std_logic;
 		black_column:		in  std_logic;
+		mode_M1_raw:		in  std_logic;
+		mode_M2_raw:		in  std_logic;
+		mode_M3_raw:		in  std_logic;
 		smode_M1:			in  std_logic;
 		smode_M2:			in  std_logic;
 		smode_M3:			in  std_logic;
 		smode_M4:			in  std_logic;
 		ysj_quirk:			in  std_logic;
 		overscan:			in  std_logic_vector (3 downto 0);
+		text_fg_color:		in  std_logic_vector (3 downto 0);
+
 
 		bg_address:			in  std_logic_vector (3 downto 0);
 		m2mg_address:		in  std_logic_vector (2 downto 0);
@@ -69,6 +74,7 @@ architecture Behavioral of vdp_main is
 	signal out_color: 		std_logic_vector(3 downto 0);	
 	signal spr_vram_A:		std_logic_vector(13 downto 0);
 	signal spr_color:		std_logic_vector(3 downto 0);
+	signal text_mode:		std_logic;
 	signal line_reset:		std_logic;
 
 	-- Border control
@@ -91,6 +97,21 @@ begin
 	--------------------------------------------------------------------
 	process (x, y, bg_scroll_y, disable_vscroll, smode_M1, smode_M3)
 		variable sum: unsigned(8 downto 0);
+	signal bg_priority:	std_logic;
+	signal out_color: 	std_logic_vector(3 downto 0) ;	
+	signal spr_vram_A:	std_logic_vector(13 downto 0);
+	signal spr_color:		std_logic_vector(3 downto 0);
+	signal text_mode:		std_logic;
+	
+	signal line_reset:	std_logic;
+ 	
+	
+begin
+
+	text_mode <= '1' when smode_M4='0' and mode_M1_raw='1' and mode_M2_raw='0' and mode_M3_raw='0' else '0';
+
+	process (x,y,bg_scroll_y,disable_vscroll,smode_M1,smode_M3)
+		variable sum: std_logic_vector(8 downto 0);
 	begin
 		if (disable_vscroll = '0') or (to_integer(unsigned(x)) + 16 < 25*8) then
 			sum := unsigned(y) + ('0' & unsigned(bg_scroll_y));
@@ -125,16 +146,21 @@ begin
 		
 		vram_A			=> bg_vram_A,
 		vram_D			=> vram_D,		
-
-		color        => bg_color,
-        smode_M1     => smode_M1,
-        smode_M2     => smode_M2,
-        smode_M3     => smode_M3,
-        smode_M4     => smode_M4,
-        ysj_quirk    => ysj_quirk,
-        priority     => bg_priority
+		color           => bg_color,
+		mode_M1_raw		=> mode_M1_raw,
+		mode_M2_raw		=> mode_M2_raw,
+		mode_M3_raw		=> mode_M3_raw,
+        smode_M1        => smode_M1,
+        smode_M2        => smode_M2,
+        smode_M3        => smode_M3,
+        smode_M4        => smode_M4,
+        ysj_quirk       => ysj_quirk,
+		text_fg_color	=> text_fg_color,
+		overscan		=> overscan,
+        priority        => bg_priority
     );
 
+		
 		
 	vdp_spr_inst: entity work.vdp_sprites
 	generic map(
@@ -195,7 +221,7 @@ begin
 --------------------------------------------------------------------
 -- Pixel color composition
 --------------------------------------------------------------------
-process (x, y, mask_column0, bg_priority, spr_color, bg_color, overscan, display_on, ggres, smode_M1, smode_M3, border_active)
+process (x, y, mask_column0, bg_priority, spr_color, bg_color, overscan, display_on, ggres, smode_M1, smode_M3, text_mode,  border_active)
 	variable spr_active	: boolean;
 	variable bg_active	: boolean;
 	variable x_i, y_i	: integer;
@@ -208,20 +234,20 @@ begin
 		cram_A <= "11111";
 		out_color <= "1111"; -- white border
 	else
-		if ((x_i>48 and x_i<=208) or (ggres='0' and x_i<=256 and x_i>0)) and 
-			(mask_column0='0' or x_i>=9) and display_on='1' then
-
-			if (((y_i>=24 and y_i<168) and smode_M1='0')
-				or ((y_i>=40 and y_i<184) and smode_M1='1')
-				or (ggres='0' and y_i<192) 
-				or (smode_M1='1' and y_i<224 and ggres='0') 
-				or (smode_M3='1' and y_i<240 and ggres='0')) then
+		if ((x>48 and x<=208) or
+			(text_mode='1' and ggres='0' and x>7 and x<248) or
+			(text_mode='0' and ggres='0' and x<=256 and x>0)) and -- thank you slingshot
+ 			(mask_column0='0' or x>=9) and display_on='1' then
+			if (((y>=24 and y<168) and smode_M1='0')
+				or ((y>=40 and y<184) and smode_M1='1')
+				or (ggres='0' and y<192) 
+				or (smode_M1='1' and y<224 and ggres='0') 
+				or (smode_M3='1' and y<240 and ggres='0') ) then
 				
-				spr_active := not (spr_color="0000");
-				bg_active  := not (bg_color(3 downto 0)="0000");
-					
+				spr_active	:= text_mode='0' and not (spr_color="0000");
+				bg_active	:= not (bg_color(3 downto 0)="0000");
 				if not spr_active and not bg_active then
-					out_color <= overscan;
+					out_color <= overscan ;
 					cram_A <= bg_color(4)&"0000";
 					y1 <= '0';
 				elsif (bg_priority='0' and spr_active) or (bg_priority='1' and not bg_active) then
@@ -246,25 +272,37 @@ begin
 	end if;
 end process;
 	
-	vram_A <= spr_vram_A when x_int>=256 and x_int<496 else bg_vram_A;  
-
-	color <= "111111111111" when border_active='1' else  -- bright white border
-			"000000000000" when black_column='1' and mask_column0='1' and x_int>0 and x_int<9 else
+	vram_A <= spr_vram_A when x>=256 and x<496 else bg_vram_A;  -- Does bg only need x<504 only?
+	color <= "000000000000" when black_column='1' and mask_column0='1' and x>0 and x<9 else
 			cram_D when smode_M4='1' else 
-			-- Legacy palette mapping
-			x"000" when   out_color="0000" or out_color="0001" else
-			X"4A2" when (out_color="0010" and palettemode='0') else
-			X"7E6" when (out_color="0011" and palettemode='0') else
-			X"F55" when (out_color="0100" and palettemode='0') else
-			X"F88" when (out_color="0101" and palettemode='0') else
-			X"55D" when (out_color="0110" and palettemode='0') else
-			X"FF4" when (out_color="0111" and palettemode='0') else
-			X"55F" when (out_color="1000" and palettemode='0') else
-			X"88F" when (out_color="1001" and palettemode='0') else
-			X"5DD" when (out_color="1010" and palettemode='0') else
-			X"8DE" when (out_color="1011" and palettemode='0') else
-			X"4B2" when (out_color="1100" and palettemode='0') else
-			X"A6B" when (out_color="1101" and palettemode='0') else
-			X"BBB" when (out_color="1110" and palettemode='0') else
-			x"FFF";
+			-- How an SMS VDP handles Legacy TMS Modes to produce these values
+			x"000" when   out_color="0000" or out_color="0001" else -- Transparent or Black
+			X"4A2" when (out_color="0010" and palettemode='0') else -- Medium Green
+			X"7E6" when (out_color="0011" and palettemode='0') else -- Light Green
+			X"F55" when (out_color="0100" and palettemode='0') else -- Dark Blue
+			X"F88" when (out_color="0101" and palettemode='0') else -- Light Blue
+			X"55D" when (out_color="0110" and palettemode='0') else -- Dark red
+			X"FF4" when (out_color="0111" and palettemode='0') else -- Cyan
+			X"55F" when (out_color="1000" and palettemode='0') else -- Medium Red
+			X"88F" when (out_color="1001" and palettemode='0') else -- Light Red
+			X"5DD" when (out_color="1010" and palettemode='0') else -- Dark Yellow
+			X"8DE" when (out_color="1011" and palettemode='0') else -- Light Yellow
+			X"4B2" when (out_color="1100" and palettemode='0') else -- Dark Green
+			X"A6B" when (out_color="1101" and palettemode='0') else -- Magenta
+			X"BBB" when (out_color="1110" and palettemode='0') else -- Gray
+			-- Equivalent values to original TMS chip output from SG-1000
+			x"4C2" when (out_color="0010" and palettemode='1') else -- Medium Green
+			x"7D5" when (out_color="0011" and palettemode='1') else -- Light Green
+			x"E55" when (out_color="0100" and palettemode='1') else -- Dark Blue
+			x"F77" when (out_color="0101" and palettemode='1') else -- Light Blue
+			x"45D" when (out_color="0110" and palettemode='1') else -- Dark red
+			x"FE4" when (out_color="0111" and palettemode='1') else -- Cyan
+			x"55F" when (out_color="1000" and palettemode='1') else -- Medium Red
+			x"77F" when (out_color="1001" and palettemode='1') else -- Light Red
+			x"5CD" when (out_color="1010" and palettemode='1') else -- Dark Yellow
+			x"8CE" when (out_color="1011" and palettemode='1') else -- Light Yellow
+			x"3B2" when (out_color="1100" and palettemode='1') else -- Dark Green
+			x"B5C" when (out_color="1101" and palettemode='1') else -- Magenta
+			x"CCC" when (out_color="1110" and palettemode='1') else -- Gray
+			x"FFF";                                                 -- White
 end Behavioral;
