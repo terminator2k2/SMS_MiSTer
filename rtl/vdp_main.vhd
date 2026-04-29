@@ -25,9 +25,10 @@ entity vdp_main is
 		palettemode:		in std_logic;
 		y1:                 out std_logic;
 					
+
 		display_on:			in  std_logic;
 		mask_column0:		in  std_logic;
-		black_column:		in  std_logic;
+		black_column:			in  std_logic;
 		mode_M1_raw:		in  std_logic;
 		mode_M2_raw:		in  std_logic;
 		mode_M3_raw:		in  std_logic;
@@ -38,6 +39,7 @@ entity vdp_main is
 		ysj_quirk:			in  std_logic;
 		overscan:			in  std_logic_vector (3 downto 0);
 		text_fg_color:		in  std_logic_vector (3 downto 0);
+
 
 
 		bg_address:			in  std_logic_vector (3 downto 0);
@@ -138,29 +140,28 @@ begin
 		table_address	=> bg_address,
 		pt_address		=> m2mg_address,
 		ct_address		=> m2ct_address,
-		reset			=> line_reset,
-		disable_hscroll	=> disable_hscroll,
+		reset				=> line_reset,
+		disable_hscroll=> disable_hscroll,
 		scroll_x 		=> bg_scroll_x,
-		y				=> bg_y,
-		screen_y		=> y,
+		y					=> bg_y,
+		screen_y			=> y,
+		screen_x			=> x,
 		
 		vram_A			=> bg_vram_A,
 		vram_D			=> vram_D,		
-		color           => bg_color,
+		color				=> bg_color,
 		mode_M1_raw		=> mode_M1_raw,
 		mode_M2_raw		=> mode_M2_raw,
 		mode_M3_raw		=> mode_M3_raw,
-        smode_M1        => smode_M1,
-        smode_M2        => smode_M2,
-        smode_M3        => smode_M3,
-        smode_M4        => smode_M4,
-        ysj_quirk       => ysj_quirk,
+		smode_M1			=> smode_M1,
+		smode_M2			=> smode_M2,
+		smode_M3			=> smode_M3,
+		smode_M4			=> smode_M4,
+		ysj_quirk			=> ysj_quirk,
 		text_fg_color	=> text_fg_color,
-		overscan		=> overscan,
-        priority        => bg_priority
+		overscan			=> overscan,
+		priority			=> bg_priority);
     );
-
-		
 		
 	vdp_spr_inst: entity work.vdp_sprites
 	generic map(
@@ -187,7 +188,7 @@ begin
 		vram_A			=> spr_vram_A,
 		vram_D			=> vram_D,		
 		color			=> spr_color
-	);
+	
 
 	--------------------------------------------------------------------
 	-- ✅ Adjustable Sinden Light Gun White Border

@@ -256,7 +256,8 @@ video_freak video_freak
 // 0         1         2         3          4         5         6          7         8         9
 // 01234567890123456789012345678901 23456789012345678901234567890123 456789012345678901234567890
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQ
-// XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXX       XXXXX  XXXX         XXXXXXXXX
+// XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXX XXXXXXXXXXX       XXXXXXX XXXX         XXXXXXXXX
+
 
 `include "build_id.v"
 parameter CONF_STR = {
@@ -277,7 +278,7 @@ parameter CONF_STR = {
 	"H8OA,Region,US/EU,Japan;",
 	"H8oBC,BIOS,Disable,Internal,Ext. File;",
 	"H8FS3,BINSMS,Load Ext. BIOS;",
-	"H8OF,Disable Mapper,No,Yes;",
+	"H8oDE,Mapper,Auto,Sega,Zemina;",
 	"H8o8,Z80 Speed,Normal,Turbo;",
 	"H8-;",
 	"H7o12,VDPs,Both,2,1,None;",
@@ -310,7 +311,7 @@ parameter CONF_STR = {
 	"P2-;",
 	"P2O1,Swap Joysticks,No,Yes;",
 	"P2OE,Multitap,Disabled,Port1;",
-	"P2OG,SNAC,Off,On;",
+	"P2oNO,USERIO,Off,SNAC,Gear2Gear;",
 	"D3P2OH,Pause Btn Combo,No,Yes;",
 	"P2-;",
 	"D2P2OIJ,Gun Control,Disabled,Joy1,Joy2,Mouse;",
@@ -871,6 +872,9 @@ system #(63) system
 	.GG_EN(status[24]),
 	.GG_CODE(gg_code),
 	.GG_AVAIL(gg_avail),
+	.gg_link_en(gg_link),
+	.gg_link_in(gg_link_in),
+	.gg_link_out(gg_link_out),
 
 	.rom_rd(ram_rd),
 	.rom_a(ram_addr),
@@ -940,7 +944,8 @@ system #(63) system
 	.ysj_quirk(ysj_quirk),
 	.pal(pal),
 	.region(status[10]),
-	.mapper_lock(status[15] && ~systeme),
+	.mapper_lock((status[46:45] == 2'b01) && ~systeme),
+	.mapper_zemina_force(status[46:45] == 2'b10),
 	.vdp_enables(dbg_menu ? status[34:33] : 2'b00),
 	.psg_enables(dbg_menu ? status[36:35] : 2'b00),
 
@@ -967,7 +972,7 @@ system #(63) system
 	.ROMCL(clk_sys),
 	.ROMAD(ioctl_addr),
 	.ROMDT(ioctl_dout),
-	.ROMEN(ioctl_wr & ioctl_index==0),
+	.ROMEN(ioctl_wr & (ioctl_index[4:0]==1)),
 	.BIOSWEN(ioctl_wr & (ioctl_index[4:0]==3))
 );
 
@@ -993,7 +998,13 @@ assign joy[1] = status[1] ? joy_0[7:0] : joy_1[7:0];
 assign joy[2] = joy_2[7:0];
 assign joy[3] = joy_3[7:0];
 
-wire raw_serial = status[16];
+wire [1:0] userio_mode = status[56:55];
+wire       userio_snac = userio_mode == 2'd1;
+wire       gg_link = (userio_mode == 2'd2) & gg;
+wire [6:0] gg_link_in;
+wire [6:0] gg_link_out;
+wire [6:0] gg_user_out;
+wire       raw_serial = userio_snac & ~gg_link;
 wire pause_combo = status[17];
 wire swap = status[1];
 wire sk1100_en = status[57];
@@ -1028,6 +1039,11 @@ wire [11:0] sk1100_joy_row = {
 	joyb[5], joyb[4], joyb[0], joyb[1], joyb[2], joyb[3],
 	joya[5], joya[4], joya[0], joya[1], joya[2], joya[3]
 };
+
+// USERIO adapter permutation. Internally, gg_link_* is PC0..PC6.
+// Physically, put Game Gear TX/PC4 on USER_IO[1] and RX/PC5 on USER_IO[2].
+assign gg_link_in  = {USER_IN[6], USER_IN[2], USER_IN[1], USER_IN[5], USER_IN[4], USER_IN[3], USER_IN[0]};
+assign gg_user_out = {gg_link_out[6], gg_link_out[3], gg_link_out[2], gg_link_out[1], gg_link_out[5], gg_link_out[4], gg_link_out[0]};
 
 keyboard keyboard_mapper
 (
@@ -1087,7 +1103,7 @@ always @(posedge clk_sys) begin
 
 		if(reset_active | ~status[14]) jcnt <= 0;
 
-		USER_OUT <= 7'b1111111;
+		USER_OUT <= gg_link ? gg_user_out : 7'b1111111;
 	end
 
 	if(gun_en) begin
