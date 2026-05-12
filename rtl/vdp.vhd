@@ -117,7 +117,6 @@ architecture Behavioral of vdp is
 	signal mode_M3:			std_logic;
 	signal mode_M4:			std_logic;
 	signal xmode_M1:			std_logic;
-	signal xmode_M2:			std_logic;
 	signal xmode_M3:			std_logic;
 	signal xmode_M4:			std_logic;
 	
@@ -125,7 +124,6 @@ begin
 	
 	mask_column <= mask_column0;
 	xmode_M1<= mode_M1 and mode_M2 ;
-	xmode_M2<= mode_M2;
 	xmode_M3<= mode_M3 and mode_M2 ;
 	xmode_M4<= mode_M4;
 
@@ -152,12 +150,9 @@ begin
 		palettemode			=> palettemode,
 		y1					=> y1,
 		smode_M1			=> xmode_M1,
-		smode_M2			=> xmode_M2,
 		smode_M3			=> xmode_M3,
 		smode_M4			=> xmode_M4,
 		ysj_quirk			=> ysj_quirk,
-						
-
 		
 		border_en_gun   => border_en_gun,
 		border_h      => border_h(3 downto 0),
