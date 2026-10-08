@@ -12,7 +12,7 @@ port (
 	table_address:		in  std_logic_vector(13 downto 10);
 	pt_address:			in  std_logic_vector(13 downto 11);
 	ct_address:			in  std_logic_vector(13 downto 6);
-	scroll_x:			in  std_logic_vector(7 downto 0);
+	scroll_x_latched:	in  std_logic_vector(7 downto 0);
 	disable_hscroll:	in  std_logic;
 	mode_M1_raw:		in  std_logic;
 	mode_M2_raw:		in  std_logic;
@@ -21,6 +21,7 @@ port (
 	smode_M3:			in  std_logic;
 	smode_M4:			in  std_logic;
 	ysj_quirk:			in  std_logic;
+	legacy_ext_nt:	in  std_logic := '0';
 	y:					in  std_logic_vector(7 downto 0);
 	screen_y:			in  std_logic_vector(8 downto 0);
 	text_fg_color:		in  std_logic_vector(3 downto 0);
@@ -84,7 +85,7 @@ begin
 				if smode_M4='0' then
 					x <= "11110000" ; -- 240
 				elsif disable_hscroll='0' or screen_y>=16 then
-					x <= 232-scroll_x;
+					x <= 232-scroll_x_latched;
 				else
 					x <= "11101000"; -- 256-24=232
 				end if;
@@ -100,7 +101,7 @@ begin
 					elsif disable_hscroll='0' or screen_y>=16 then
 						-- if you mess with this check Sangokushi3 scroll during
 						-- the presentation + scroll of the top line during fight
-						x <= 232-scroll_x;   -- temporary workaround of 1pix roll - needs better fix!
+						x <= 232-scroll_x_latched;   -- temporary workaround of 1pix roll - needs better fix!
 					else
 						x <= "11101000"; -- 256-24=232
 					end if;
@@ -183,7 +184,9 @@ begin
 					end if;
 
 				elsif smode_M4='1' then
-					if (smode_M1='1' or smode_M3='1') then
+					-- The Evolution clone extends the visible height without the
+					-- SMS2 $x700 name-table remap. Keep R2's ordinary $x800 base.
+					if (smode_M1='1' or smode_M3='1') and legacy_ext_nt='0' then
 						char_address(12 downto 5) := table_address(13 downto 12) & ("011100" + y(7 downto 3));
 					else
 						char_address(12 downto 10) := table_address(13 downto 11);

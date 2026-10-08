@@ -17,6 +17,11 @@ entity vdp is
 		se_bank:			in  STD_LOGIC;
 		sp64:				in  STD_LOGIC;
 		HL:				in  STD_LOGIC;
+		-- Mask only IRQ delivery; the line counter and pending flag keep running.
+		-- This lets clone-specific glue coalesce a last-line HINT with VINT.
+		mask_line_irq:	in  STD_LOGIC := '0';
+		capture_cpu_edges: in STD_LOGIC := '0';
+		legacy_ext_nt:	in  STD_LOGIC := '0';
 		RD_n:				in  STD_LOGIC;
 		WR_n:				in  STD_LOGIC;
 		IRQ_n:			out STD_LOGIC;
@@ -27,6 +32,7 @@ entity vdp is
 		D_out:			out STD_LOGIC_VECTOR (7 downto 0);
 		x:					in  STD_LOGIC_VECTOR (8 downto 0);
 		y:					in  STD_LOGIC_VECTOR (8 downto 0);
+		vcounter_cpu:		in  STD_LOGIC_VECTOR (7 downto 0);
 		color:			out STD_LOGIC_VECTOR (11 downto 0);
 		palettemode:	in STD_LOGIC;
 		y1:            out std_logic;
@@ -80,8 +86,8 @@ entity vdp is
 		--  [117]          collide_flag
 		--  [118]          overflow_flag
 		--  [119]          line_overflow
-		--  [120]          last_x0
-		-- Total: 121 bits -> packed into ss_regs[127:0] (16 bytes, 2 DDRAM words)
+		--  [127:120]      bg_scroll_x_latched
+		-- Total: 128 bits -> packed into ss_regs[127:0] (16 bytes, 2 DDRAM words)
 		ss_regs_out    : out STD_LOGIC_VECTOR(127 downto 0);
 		-- Restore: load all VDP control registers at once (held one cycle while ss_regs_set='1')
 		ss_regs_in     : in  STD_LOGIC_VECTOR(127 downto 0) := (others => '0');
@@ -128,7 +134,8 @@ architecture Behavioral of vdp is
 	signal cram_cpu_WE:		std_logic;
 	signal vram_cpu_D_out:	std_logic_vector(7 downto 0);
 	signal vram_cpu_D_out_raw: std_logic_vector(7 downto 0);  -- raw port-A output (shared with SS DMA)
-	signal vram_cpu_D_outl:	std_logic_vector(7 downto 0);	
+	signal vram_cpu_D_outl:	std_logic_vector(7 downto 0);
+	signal cpu_write_data:	std_logic_vector(7 downto 0) := (others => '0');
 	signal xram_cpu_A_incr:	std_logic := '0';
 	signal xram_cpu_read:	std_logic := '0';
 
@@ -158,6 +165,7 @@ architecture Behavioral of vdp is
 	signal m2mg_address:		std_logic_vector (2 downto 0) := (others=>'0');
 	signal m2ct_address:		std_logic_vector (7 downto 0) := (others=>'1');
 	signal bg_scroll_x:		std_logic_vector(7 downto 0) := (others=>'0');
+	signal bg_scroll_x_latched : std_logic_vector(7 downto 0) := (others => '0');
 	signal bg_scroll_y:		std_logic_vector(7 downto 0) := (others=>'0');
 	signal spr_address:		std_logic_vector (6 downto 0) := (others=>'0');
 	signal spr_shift:			std_logic := '0';
@@ -207,6 +215,7 @@ begin
 		ce_sp				=> ce_sp,
 		ggres					=> ggres,
 		sp64				=> sp64,
+		legacy_ext_nt	=> legacy_ext_nt,
 		vram_A			=> vram_vdp_A,
 		vram_D			=> vram_vdp_D,
 		cram_A			=> cram_vdp_A,
@@ -238,7 +247,7 @@ begin
 		bg_address		=> bg_address,
 		m2mg_address	=> m2mg_address,
 		m2ct_address	=> m2ct_address,
-		bg_scroll_x		=> bg_scroll_x,
+		bg_scroll_x		=> bg_scroll_x_latched,
 		bg_scroll_y		=> bg_scroll_y,
 		disable_hscroll=>disable_hscroll,
 		disable_vscroll => disable_vscroll,
@@ -257,12 +266,13 @@ begin
 												ss_vram_A  when ss_vram_en='1' else
 												vram_cpu_A;
 	vram_portA_wren    <= ss_vram_WE or (vram_cpu_WE and not ss_vram_en);
-	vram_portA_data    <= ss_vram_WD when ss_vram_WE='1' else D_in;
+	vram_portA_data    <= ss_vram_WD when ss_vram_WE='1' else cpu_write_data;
 
 	vdp_vram_inst : entity work.dpram
-    generic map
-    (
-      widthad_a		=> 15
+	generic map
+	(
+		widthad_a		=> 15,
+		mixed_port_rdwr => "OLD_DATA"
     )
     port map
     (
@@ -300,8 +310,10 @@ begin
 	);
 
 	cram_vdp_A_in <= xram_cpu_A(4 downto 0) when gg='0' else xram_cpu_A(5 downto 1);
-	cram_vdp_D_in <= (D_in(5 downto 4) & D_in(5 downto 4) & D_in(3 downto 2) & D_in(3 downto 2) & D_in(1 downto 0) & D_in(1 downto 0))
-							when gg='0' else (D_in(3 downto 0) & cram_latch);
+	cram_vdp_D_in <= (cpu_write_data(5 downto 4) & cpu_write_data(5 downto 4) &
+	                    cpu_write_data(3 downto 2) & cpu_write_data(3 downto 2) &
+	                    cpu_write_data(1 downto 0) & cpu_write_data(1 downto 0))
+							when gg='0' else (cpu_write_data(3 downto 0) & cram_latch);
 	cram_cpu_WE <= data_write when to_cram and ((gg='0') or (xram_cpu_A(0)='1')) and WR_direct='0' else '0';
 	vram_cpu_WE <= data_write when (WR_direct='1' or not to_cram) else '0';
 	vram_cpu_A <= not se_bank & A_direct & A when WR_direct='1' else se_bank & xram_cpu_A;
@@ -346,8 +358,7 @@ begin
 	ss_regs_out(117)         	<= collide_flag;
 	ss_regs_out(118)         	<= overflow_flag;
 	ss_regs_out(119)         	<= line_overflow;
-	ss_regs_out(120)         	<= last_x0;
-	ss_regs_out(127 downto 121)	<= (others => '0');
+	ss_regs_out(127 downto 120)	<= bg_scroll_x_latched;
 
 	smode_M1 <= mode_M1 and mode_M2 ;
 	smode_M2 <= mode_M2;
@@ -358,6 +369,11 @@ begin
 	variable reset_set: boolean ;
 	begin
 		if reset_n='0' then
+			old_WR_n        <= '1';
+			old_RD_n        <= '1';
+			old_WR_direct   <= '0';
+			old_HL          <= '0';
+			cpu_write_data  <= (others => '0');
 			disable_hscroll<= '0';--36
 			disable_vscroll <= '0';
 			mask_column0	<= '1';--
@@ -428,6 +444,7 @@ begin
 				old_RD_n        <= RD_n;
 				old_WR_direct   <= WR_direct;
 				old_HL          <= HL;
+				cpu_write_data  <= D_in;
 				data_write      <= '0';
 				xram_cpu_A_incr <= '0';
 			end if;
@@ -437,16 +454,22 @@ begin
 				latched_x <= x(8 downto 1);
 			end if;
 
-			if ce_vdp = '1' then
+			-- The Evolution menu performs tightly packed OUTI/OTIR transfers.
+			-- Its clone VDP observes each CPU write edge; sampling only on ce_vdp
+			-- can occasionally lose one byte and shift the rest of a tile row.
+			if ce_vdp = '1' or
+			   (capture_cpu_edges = '1' and old_WR_n /= WR_n) then
 				old_WR_n <= WR_n;
 				old_RD_n <= RD_n;
 				old_WR_direct <= WR_direct;
 
 				if old_WR_direct = '0' and WR_direct='1' then
+					cpu_write_data <= D_in;
 					data_write <= '1';
 				end if;
 				if old_WR_n = '1' and WR_n='0' then
 					if A(0)='0' then
+						cpu_write_data <= D_in;
 						data_write <= '1';
 						xram_cpu_A_incr <= '1';
 						address_ff		<= '0';
@@ -507,7 +530,7 @@ begin
 				elsif old_RD_n = '1' and RD_n='0' then
 					case A(7 downto 6)&A(0) is
 					when "010" => -- VCounter
-						D_out <= y(7 downto 0);
+						D_out <= vcounter_cpu;
 					when "011" => -- HCounter
 						D_out <= latched_x;
 					when "100" => -- Data port
@@ -567,7 +590,7 @@ begin
 	begin
 		if rising_edge(clk_sys) then
 			if ss_regs_set = '1' then
-				last_x0 <= ss_regs_in(120);
+				last_x0 <= std_logic(x(0));
 				-- Restore hbl_counter to the actual saved value from ss_regs_in(111 downto 104).
 				hbl_counter <= ss_regs_in(111 downto 104);
 				hbl_irq <= ss_regs_in(116);
@@ -601,7 +624,8 @@ begin
 				line_overflow <= ss_regs_in(119);
 				xspr_collide_shift <= (others => '0');
 				-- Immediately restore IRQ_n level corresponding to the restored snapshot state
-				if ((ss_regs_in(115) = '1' and ss_regs_in(8) = '1') or (ss_regs_in(116) = '1' and ss_regs_in(3) = '1')) then
+				if ((ss_regs_in(115) = '1' and ss_regs_in(8) = '1') or
+				    (ss_regs_in(116) = '1' and ss_regs_in(3) = '1' and mask_line_irq = '0')) then
 					if ss_regs_in(114 downto 112) = "000" then
 						IRQ_n <= '0';
 					else
@@ -644,7 +668,8 @@ begin
 						line_overflow <= '1'; -- Spr over many lines
 					end if;
 
-					if ((vbl_irq='1' and irq_frame_en='1') or (hbl_irq='1' and irq_line_en='1'))
+					if ((vbl_irq='1' and irq_frame_en='1') or
+					    (hbl_irq='1' and irq_line_en='1' and mask_line_irq='0'))
 						and not reset_flags then
 						if irq_delay = "000" then
 							IRQ_n <= '0';
@@ -660,4 +685,23 @@ begin
 		end if;
 	end process;
 	
+	-- YM2602 / Nuked-SMS-FPGA latches R8 at horizontal count 488.
+	-- Captured at x=487 so the updated value is available to the background
+	-- pipeline when line_reset triggers at x=488.
+	process (clk_sys)
+	begin
+		if rising_edge(clk_sys) then
+			if reset_n = '0' then
+				bg_scroll_x_latched <= (others => '0');
+			elsif ss_regs_set = '1' then
+				-- Preserve deterministic behavior after restoring a state.
+				bg_scroll_x_latched <= ss_regs_in(127 downto 120);
+			elsif ce_pix = '1' then
+				if x = conv_std_logic_vector(487, 9) then
+					bg_scroll_x_latched <= bg_scroll_x;
+				end if;
+			end if;
+		end if;
+	end process;
+
 end Behavioral;

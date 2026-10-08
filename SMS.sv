@@ -116,7 +116,12 @@ always_comb begin
 			if (border) begin
 				arx = 6'd47;
 				ary = 6'd35;
-			end else begin
+			end
+			else if (status[29] && ~status[13]) begin
+				arx = 6'd31;
+				ary = 6'd21;
+			end
+			else begin
 				arx = 6'd32;
 				ary = 6'd21;
 			end
@@ -191,8 +196,8 @@ parameter CONF_STR = {
 	"H8FS2,GG;",
 	"-;",
 	"O[16:15],SaveState Slot,1,2,3,4;",
-	"R[61],Save State (Alt+F1);",
-	"R[62],Load State (F1);",
+	"R[61],Save State (Alt+F1-F4);",
+	"R[62],Load State (F1-F4);",
 	"-;",
 	"DIP;",
 	"C,Cheats;",
@@ -237,6 +242,8 @@ parameter CONF_STR = {
 	"P2,Input;",
 	"P2-;",
 	"P2O1,Swap Joysticks,No,Yes;",
+	"P2O[65:64],P1 Controller,SMS 2B,MD 3B,MD 6B;",
+	"P2O[67:66],P2 Controller,SMS 2B,MD 3B,MD 6B;",
 	"P2OE,Multitap,Disabled,Port1;",
 	"P2oNO,USERIO,Off,SNAC,Gear2Gear;",
 	"D3P2OH,Pause Btn Combo,No,Yes;",
@@ -257,9 +264,11 @@ parameter CONF_STR = {
 	"H8RB,Soft Reset;",
 	"H8R9,Eject ROM;",
 	"R0,Reset;",
-	"J1,Fire 1,Fire 2,Pause,-,-,Soft Reset,-,-,SaveState;",
-	"jn,A|P,B,Start,Coin,X,Select;",
-	"jp,Y|P,A,Start,Coin,X,Select;",
+	"J1,Fire 1,Fire 2,Pause,-,-,Soft Reset,Mega Drive A,Mega Drive Start,SaveState,Mega Drive X,Mega Drive Y,Mega Drive Z,Mega Drive Mode;",
+	// jn/jp enumerate only named J1 entries (the two '-' slots are skipped).
+	// Preserve existing Fire/Pause/Reset defaults; SaveState and MD are manual.
+	"jn,A|P,B,Start,Coin,-,-,-,-,-,-,-;",
+	"jp,Y|P,A,Start,Coin,-,-,-,-,-,-,-;",
 	"I,",
 	"Slot=DPAD L/R|Save=Down|Load=Up,",
 	"Active Slot 1,",
@@ -274,7 +283,7 @@ parameter CONF_STR = {
 	"Restore state 3,",
 	"Save to state 4,",
 	"Restore state 4;",
-	"V,v",`BUILD_DATE
+	"V,v",`BUILD_DATE 
 };
 
 
@@ -393,7 +402,18 @@ always_ff @(posedge clk_sys) begin
 	bios_config_reset <= (reset_timer > 0);
 end
 
-wire raw_reset = RESET | status[0] | buttons[1] | cart_download | bios_download | gg_bios_download | bios_config_reset | bk_loading | eject_rom;
+// The Evolution controller's X, Y and Z buttons are wired so pressing all
+// three pulls the console's RESET input low. Keep the SMS shortcut as well.
+wire evolution_mode;
+wire evolution_sms_combo =
+	((joy_0[4] & joy_0[5] & joy_0[6]) |
+	 (joy_1[4] & joy_1[5] & joy_1[6]));
+wire evolution_md6_combo =
+	((p1_controller_type == 2'd2) & (&p1_joy[15:13])) |
+	((p2_controller_type == 2'd2) & (&p2_joy[15:13]));
+wire evolution_reset_combo = evolution_mode & (evolution_sms_combo | evolution_md6_combo);
+
+wire raw_reset = RESET | status[0] | buttons[1] | cart_download | bios_download | gg_bios_download | bios_config_reset | bk_loading | eject_rom | evolution_reset_combo;
 
 reg [13:0] ram_clr_addr;
 reg        ram_clr_run = 0;
@@ -411,13 +431,13 @@ end
 wire reset_active = raw_reset | ram_clr_run;
 
 //////////////////   HPS I/O   ///////////////////
-wire [15:0] joy_0, joy_1, joy_2, joy_3;
+wire [31:0] joy_0, joy_1, joy_2, joy_3;
 wire  [7:0] joy[4];
 wire  [7:0] joy0_x,joy0_y,joy1_x,joy1_y;
 wire  [7:0] paddle_0, paddle_1;
 wire  [1:0] buttons;
 wire [10:0] ps2_key;
-wire [63:0] status;
+wire [127:0] status;
 reg  [127:0] status_in = 0;
 reg          status_set = 0;
 reg         sc3000_auto = 0;
@@ -451,6 +471,7 @@ wire [21:0] gamma_bus;
 
 wire [24:0] ps2_mouse;
 
+// WIDE controls file transfers, not status width; ROM downloads remain bytes.
 hps_io #(.CONF_STR(CONF_STR), .WIDE(0)) hps_io
 (
 	.clk_sys(clk_sys),
@@ -505,7 +526,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(0)) hps_io
 	.ps2_mouse(ps2_mouse)
 );
 
-wire [21:0] ram_addr;
+wire [23:0] ram_addr;
 wire  [7:0] ram_dout;
 wire        ram_rd;
 
@@ -706,7 +727,7 @@ reg        load_sc     = 0;
 reg        load_sg     = 0;
 reg        load_sc_multicart = 0;
 reg        load_sc_megacart = 0;
-reg [21:0] cart_mask, cart_mask512;
+reg [23:0] cart_mask, cart_mask512;
 reg        cart_sz512;
 wire [7:0] ioctl_ext_b0 = ioctl_file_ext[7:0];
 wire [7:0] ioctl_ext_b1 = ioctl_file_ext[15:8];
@@ -753,7 +774,7 @@ always @(posedge clk_sys) begin
 		sc_multicart_auto <= 0;
 		sc_megacart_auto <= 0;
 		if (sc3000_menu_auto) begin
-			status_in <= {64'd0, status};
+			status_in <= status;
 			status_in[58] <= 1'b0;
 			status_set <= 1'b1;
 			sc3000_menu_auto <= 1'b0;
@@ -768,8 +789,8 @@ always @(posedge clk_sys) begin
 		sc_multicart_auto <= 0;
 		sc_megacart_auto <= 0;
 	end else if (ioctl_wr & cart_download) begin
-		cart_mask <= cart_mask | ioctl_addr[21:0];
-		cart_mask512 <= cart_mask512 | (ioctl_addr[21:0] - 10'd512);
+		cart_mask <= cart_mask | ioctl_addr[23:0];
+		cart_mask512 <= cart_mask512 | (ioctl_addr[23:0] - 10'd512);
 		if (!ioctl_addr)
 			cart_mask <= 0;
 		if (ioctl_addr == 512)
@@ -792,13 +813,13 @@ always @(posedge clk_sys) begin
 		palettemode <= load_sg;
 		if (load_sc) begin
 			if (!status[58]) begin
-				status_in <= {64'd0, status};
+				status_in <= status;
 				status_in[58] <= 1'b1;
 				status_set <= 1'b1;
 				sc3000_menu_auto <= 1'b1;
 			end
 		end else if (sc3000_menu_auto) begin
-			status_in <= {64'd0, status};
+			status_in <= status;
 			status_in[58] <= 1'b0;
 			status_set <= 1'b1;
 			sc3000_menu_auto <= 1'b0;
@@ -812,7 +833,7 @@ always @(posedge clk_sys) begin
 	end;
 	// Joystick combo changed the slot — push new value back to OSD
 	if (ss_status) begin
-		status_in        <= {64'd0, status};
+		status_in        <= status;
 		status_in[16:15] <= ss_slot;
 		status_set       <= 1'b1;
 	end;
@@ -848,9 +869,13 @@ wire         ss_vram_WE;
 wire [55:0]  ss_psg_out, ss_psg_in;
 wire         ss_psg_set;
 wire [63:0]  ss_mapper_out, ss_mapper_in;
+wire [95:0]  ss_evolution_out, ss_evolution_in;
+wire         ss_evolution_set;
 wire         ss_mapper_set;
 wire [31:0]  ss_io_out, ss_io_in;
 wire         ss_io_set;
+wire [63:0]  eeprom_ss_out, eeprom_ss_in;
+wire         eeprom_ss_set;
 reg [1:0] restored_vdp_enables;
 reg [1:0] restored_psg_enables;
 reg       has_restored_enables = 0;
@@ -919,6 +944,12 @@ wire mapper_force_codies    = (mapper_sel == 4'd2);
 wire mapper_force_dahjee_a  = (mapper_sel == 4'd3);
 wire mapper_force_linear    = (mapper_sel == 4'd4);
 wire mapper_force_zemina    = (mapper_sel == 4'd5);  // covers MSX, Nemesis II+ and Zemina (all identical)
+// Evolution is identified from either known full-flash CRC in system.vhd.
+// It intentionally has no manual OSD selection.
+wire mapper_force_evolution = 1'b0;
+wire evolution_gg_mode;
+wire mapper_eeprom;
+wire eeprom_active          = mapper_eeprom;
 
 wire [14:0] nvram_a;
 wire        nvram_we;
@@ -966,23 +997,23 @@ system #(63) system
 	.rom_a(ram_addr),
 	.rom_do(ram_dout),
 
-	.j1_up(joya[3]),
-	.j1_down(joya[2]),
-	.j1_left(joya[1]),
-	.j1_right(joya[0]),
-	.j1_tl(joya[4]),
-	.j1_tr(joya[5]),
+	.j1_up(joya_pins[3]),
+	.j1_down(joya_pins[2]),
+	.j1_left(joya_pins[1]),
+	.j1_right(joya_pins[0]),
+	.j1_tl(joya_pins[4]),
+	.j1_tr(joya_pins[5]),
 	.j1_th(joya_th),
 	.j1_start(swap ? joy_1[6] : joy_0[6]),
 	.j1_coin(swap ? joy_1[7] : joy_0[7]),
 	.j1_a3(swap ? joy_1[6] : joy_0[6]),
 
-	.j2_up(joyb[3]),
-	.j2_down(joyb[2]),
-	.j2_left(joyb[1]),
-	.j2_right(joyb[0]),
-	.j2_tl(joyb[4]),
-	.j2_tr(joyb[5]),
+	.j2_up(joyb_pins[3]),
+	.j2_down(joyb_pins[2]),
+	.j2_left(joyb_pins[1]),
+	.j2_right(joyb_pins[0]),
+	.j2_tl(joyb_pins[4]),
+	.j2_tr(joyb_pins[5]),
 	.j2_th(joyb_th),
 	.pause(systeme ? 1'b1 : (joya[6]&joyb[6])),
 	.se_pause(se_pause_gate),
@@ -1018,6 +1049,7 @@ system #(63) system
 
 	.x(x),
 	.y(y),
+	.vcounter_cpu(vcounter_cpu),
 	.color(color),
 	.palettemode(sg_palette),
 	.mask_column(mask_column),
@@ -1025,6 +1057,7 @@ system #(63) system
 	.smode_M1(smode_M1),
 	.smode_M2(smode_M2),
 	.smode_M3(smode_M3),
+	.smode_M4(smode_M4),
 	.ysj_quirk(ysj_quirk),
 	.pal(pal),
 	.region(status[10]),
@@ -1033,6 +1066,13 @@ system #(63) system
 	.mapper_dahjee_a_force(mapper_force_dahjee_a),
 	.mapper_linear_force(mapper_force_linear),
 	.mapper_zemina_force(mapper_force_zemina),
+	.mapper_evolution_force(mapper_force_evolution),
+	.evolution_gg_active(evolution_gg_mode),
+	.evolution_active(evolution_mode),
+	.mapper_eeprom_out(mapper_eeprom),
+	.eeprom_ss_out(eeprom_ss_out),
+	.eeprom_ss_in (eeprom_ss_in),
+	.eeprom_ss_set(eeprom_ss_set),
 	.vdp_enables(has_restored_enables ? restored_vdp_enables : (dbg_menu ? status[34:33] : 2'b00)),
 	.psg_enables(has_restored_enables ? restored_psg_enables : (dbg_menu ? status[36:35] : 2'b00)),
 
@@ -1085,6 +1125,9 @@ system #(63) system
 	.mapper_out  (ss_mapper_out),
 	.mapper_in   (ss_mapper_in),
 	.mapper_set  (ss_mapper_set),
+	.evolution_ss_out(ss_evolution_out),
+	.evolution_ss_in (ss_evolution_in),
+	.evolution_ss_set(ss_evolution_set),
 	.z80_m1_n    (ss_z80_m1_n),
 	.z80_mreq_n  (ss_z80_mreq_n),
 	.z80_iset    (ss_z80_iset),
@@ -1112,7 +1155,7 @@ system #(63) system
 
 savestate_ui savestate_ui_inst (
 	.clk         (clk_sys),
-	.status      (status),
+	.status      (status[63:0]),
 	.ps2_key     (ps2_key),
 	.allow_ss    (ss_state_allowed),
 	.joySS       (swap ? joy_1[12] : joy_0[12]),
@@ -1179,6 +1222,13 @@ savestates savestates_inst (
 	.mapper_out      (ss_mapper_out),
 	.mapper_in       (ss_mapper_in),
 	.mapper_set      (ss_mapper_set),
+	.evolution_out   (ss_evolution_out),
+	.evolution_in    (ss_evolution_in),
+	.evolution_set   (ss_evolution_set),
+	// EEPROM
+	.eeprom_out      (eeprom_ss_out),
+	.eeprom_in       (eeprom_ss_in),
+	.eeprom_set      (eeprom_ss_set),
 	.io_out          (ss_io_out),
 	.io_in           (ss_io_in),
 	.io_set          (ss_io_set),
@@ -1265,6 +1315,12 @@ assign joy[1] = status[1] ? joy_0_masked : joy_1_masked;
 assign joy[2] = joy_2[7:0];
 assign joy[3] = joy_3[7:0];
 
+// Controller types belong to console ports; Swap only exchanges input devices.
+wire [1:0] p1_controller_type = status[65:64];
+wire [1:0] p2_controller_type = status[67:66];
+wire [31:0] p1_joy = status[1] ? joy_1 : joy_0;
+wire [31:0] p2_joy = status[1] ? joy_0 : joy_1;
+
 wire [1:0] userio_mode = status[56:55];
 wire       userio_snac = userio_mode == 2'd1;
 wire       gg_link = (userio_mode == 2'd2) & gg;
@@ -1295,6 +1351,29 @@ wire      joya_th;
 wire      joyb_th;
 wire      joyser_th;
 reg [1:0] jcnt = 0;
+
+// Accessory routing and non-SMS systems retain their existing pin behavior.
+// TH is an input to the pad, so the existing TH return path stays untouched.
+wire md_pad_enable = ~(raw_serial | gun_en | paddle_en | status[14] | gg | systeme);
+wire [5:0] joya_pins, joyb_pins;
+sega_controller controller_p1
+(
+	.clk(clk_sys), .reset(reset_active),
+	.controller_type(md_pad_enable ? p1_controller_type : 2'd0),
+	.sms_pins(joya[5:0]), .th(joya_th_out),
+	.md_a(p1_joy[10]), .md_start(p1_joy[11]),
+	.md_x(p1_joy[13]), .md_y(p1_joy[14]), .md_z(p1_joy[15]), .md_mode(p1_joy[16]),
+	.pins(joya_pins)
+);
+sega_controller controller_p2
+(
+	.clk(clk_sys), .reset(reset_active),
+	.controller_type(md_pad_enable ? p2_controller_type : 2'd0),
+	.sms_pins(joyb[5:0]), .th(joyb_th_out),
+	.md_a(p2_joy[10]), .md_start(p2_joy[11]),
+	.md_x(p2_joy[13]), .md_y(p2_joy[14]), .md_z(p2_joy[15]), .md_mode(p2_joy[16]),
+	.pins(joyb_pins)
+);
 
 wire has_pedal = SYSMODE[0][3];
 wire [7:0] pedal = paddle_en ? paddle_1 : !joy0_y[7] ? 8'h00: {~joy0_y[6:0],~joy0_y[6]};
@@ -1358,10 +1437,10 @@ always @(posedge clk_sys) begin
 
 		if(ce_cpu) begin
 			if(tmr > 57000) jcnt <= 0;
-			else if(joya_th) tmr <= tmr + 1'd1;
+			else if(joya_th_out) tmr <= tmr + 1'd1;
 
-			old_th <= joya_th;
-			if(old_th & ~joya_th) begin
+			old_th <= joya_th_out;
+			if(old_th & ~joya_th_out) begin
 				tmr <= 0;
 			//first clock doesn't count as capacitor has not discharged yet
 			if(tmr < 57000) jcnt <= jcnt + 1'd1;
@@ -1415,12 +1494,16 @@ assign AUDIO_R=audio_r;
 
 wire [8:0] x;
 wire [8:0] y;
+wire [7:0] vcounter_cpu;
 wire [11:0] color;
 wire mask_column;
-wire smode_M1, smode_M2, smode_M3;
+wire smode_M1, smode_M2, smode_M3, smode_M4;
 wire pal = status[2];
-wire border = status[13] & ~gg;
-wire ggres = ~status[39] & gg;
+// Evolution's Sonic Drift 2 uses GG CRAM and controls on a TV-sized raster.
+// Keep the full SMS output, including the original game's off-screen garbage.
+wire gg_video = gg;
+wire border = status[13] & ~gg_video;
+wire ggres = ~status[39] & gg_video;
 wire turbo = status[40];
 
 video video
@@ -1435,11 +1518,13 @@ video video
 	.smode_M1(smode_M1),
 	.smode_M2(smode_M2),
 	.smode_M3(smode_M3),
+	.smode_M4(smode_M4),
 	.video_state_out(ss_video_state_out),
 	.video_state_in(ss_video_state_in),
-	.video_state_set(1'b0),
+	.video_state_set(ss_video_state_set),
 	.x(x),
 	.y(y),
+	.vcounter_cpu(vcounter_cpu),
 	.hsync(HS),
 	.vsync(VS),
 	.hblank(HBlank),
@@ -1524,7 +1609,13 @@ always @(posedge clk_sys) begin
 		bk_pending <= 1'b0;
 end
 
-dpram #(.widthad_a(15)) nvram_inst
+wire downloading = cart_download;
+reg old_downloading = 0;
+reg bk_ena = 0;
+
+
+
+dpram #(.widthad_a(15), .init_file("rtl/nvram_ff.mif")) nvram_inst
 (
 	.clock_a     (clk_sys),
 	.address_a   (ss_freeze ? (ss_nvram_WE ? ss_nvram_WA : ss_nvram_A) : nvram_a),
@@ -1538,17 +1629,16 @@ dpram #(.widthad_a(15)) nvram_inst
 	.q_b         (sd_buff_din)
 );
 
-wire downloading = cart_download;
-reg old_downloading = 0;
-reg bk_ena = 0;
 always @(posedge clk_sys) begin
-
 	old_downloading <= downloading;
 	if (eject_rom) bk_ena <= 0;
 	if(~old_downloading & downloading) bk_ena <= 0;
 
-	//Save file always mounted in the end of downloading state.
+	// Save file always mounted in the end of downloading state.
 	if(downloading && img_mounted && !img_readonly) bk_ena <= 1;
+
+	// After download completes: enable bk for EEPROM games whenever active
+	if(!downloading && eeprom_active) bk_ena <= 1;
 end
 
 wire bk_load    = status[6];
