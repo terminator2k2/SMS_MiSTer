@@ -29,8 +29,7 @@ port (
 	overflow			: out std_logic;
 	color				: out STD_LOGIC_VECTOR (3 downto 0);
 	-- Save-state: reset scanner to clean state when '1' (held one cycle)
-	ss_regs_set		: in  STD_LOGIC := '0';
-	ss_reset		: in  STD_LOGIC := '0');
+	ss_regs_set		: in  STD_LOGIC := '0');
 end vdp_sprites;
 
 architecture Behavioral of vdp_sprites is
@@ -79,7 +78,9 @@ begin
 			-- between x=255 and x=511 in some way inside the shifters, or we'll have spurious
 			-- signals difficult to filter outside them. The compare operators are kept
 			-- outside the module to avoid to have them duplicated 64 times.
-			load  => shift='0' and x<256, --load range
+			-- Mode 4 X=0 stores FF: load at x=511, not the x=255 alias.
+			load  => shift='0' and ((smode_M4='1' and (x<255 or x=511)) or
+									 (smode_M4='0' and x<256)),
 			x248  => shift='1' and (x<248 or x>=504) and smode_M4='1', --load range for shifted sprites
 			x224  => smode_M4='0' and (x<223 or x>=480), -- load range for shifted mode2 spr
 			m4 => smode_M4='1',
@@ -90,7 +91,7 @@ begin
 			spr_d3=> spr_d3(i),
 			color => spr_color(i),
 			active=> spr_active(i),
-			ss_regs_set => ss_regs_set or ss_reset
+			ss_regs_set => ss_regs_set
 		);
 
 	end generate;
@@ -123,7 +124,7 @@ begin
 		if rising_edge(clk_sys) then
 			-- Save-state restore: reset scanner fully so first frame after load
 			-- uses correct sprite data for y=0 (no stale phantom sprites/state).
-			if ss_regs_set = '1' or ss_reset = '1' then
+			if ss_regs_set = '1' then
 				count    <= 0;
 				enable   <= (others => false);
 				state    <= WAITING;
